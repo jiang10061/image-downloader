@@ -1,192 +1,275 @@
 import os
-import requests
-from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor
-from tqdm import tqdm
-import logging
+import sys
 import json
-from urllib.parse import urljoin, urlparse
+import time
+import hashlib
+import requests
+import asyncio
+import aiomysql
+from bs4 import BeautifulSoup
 from PIL import Image
 from io import BytesIO
-import sqlite3
-import hashlib
+from urllib.parse import urljoin, urlparse
+from concurrent.futures import ThreadPoolExecutor
+from rich.console import Console
+from rich.progress import Progress, BarColumn, DownloadColumn, TimeRemainingColumn
+from typing import List, Dict, Optional
 
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+console = Console()
 
-# 初始化数据库
-def init_database(db_path):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS images (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT UNIQUE,
-            filepath TEXT,
-            downloaded BOOLEAN DEFAULT 0,
-            hash TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# 配置文件路径
+CONFIG_FILE = "config.json"
 
-# 检查图片是否已下载
-def is_downloaded(db_path, url):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('SELECT downloaded FROM images WHERE url = ?', (url,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else False
+# 默认配置
+DEFAULT_CONFIG = {
+    "threads": 10,
+    "max_retries": 3,
+    "timeout": 10,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "proxy_pool": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all",
+    "db_config": {
+        "host": "localhost",
+        "user": "root",
+        "password": "",
+        "db": "image_downloader"
+    },
+    "min_size": (800, 600),
+    "valid_content_types": ["image/jpeg", "image/png", "image/gif"]
+}
 
-# 记录图片下载状态
-def record_download(db_path, url, filepath, downloaded=True, hash=None):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO images (url, filepath, downloaded, hash)
-        VALUES (?, ?, ?, ?)
-    ''', (url, filepath, downloaded, hash))
-    conn.commit()
-    conn.close()
-
-def calculate_hash(image_path):
-    with open(image_path, 'rb') as f:
-        image_data = f.read()
-    return hashlib.md5(image_data).hexdigest()
-
-def download_image(url, folder, index, session, proxies=None, headers=None, db_path=None):
-    try:
-        if db_path and is_downloaded(db_path, url):
-            logging.info(f"Skipping already downloaded image: {url}")
-            return True
-
-        response = session.get(url, proxies=proxies, headers=headers, timeout=10)
-        response.raise_for_status()
-
-        # 获取文件扩展名
-        ext = url.split('.')[-1].lower()
-        if ext not in ['jpg', 'jpeg', 'png', 'gif', 'bmp']:
-            ext = 'jpg'  # 默认保存为jpg格式
-
-        # 保存图片
-        filename = f'image_{index}.{ext}'
-        filepath = os.path.join(folder, filename)
-        with open(filepath, 'wb') as f:
-            f.write(response.content)
-
-        # 压缩图片
-        compress_image(filepath)
-
-        # 计算图片哈希值
-        image_hash = calculate_hash(filepath)
-
-        logging.info(f"Downloaded {url} to {filepath}")
+class ImageDownloader:
+    def __init__(self, config_path: str = CONFIG_FILE):
+        self.config = self.load_config(config_path)
+        self.session = requests.Session()
+        self.init_db()
+        self.proxy_pool = self.load_proxy_pool()
+    
+    def load_config(self, path: str) -> dict:
+        """加载配置文件"""
+        if not os.path.exists(path):
+            self.save_config(DEFAULT_CONFIG, path)
+            console.print(f"[yellow]Config file created: {path}[/yellow]")
+            return DEFAULT_CONFIG
         
-        if db_path:
-            record_download(db_path, url, filepath, hash=image_hash)
-        return True
-    except Exception as e:
-        logging.error(f"Failed to download {url}: {e}")
-        return False
-
-def compress_image(filepath):
-    try:
-        with Image.open(filepath) as img:
-            img = img.convert('RGB')
-            img.save(filepath, optimize=True, quality=85)
-        logging.info(f"Compressed {filepath}")
-    except Exception as e:
-        logging.error(f"Failed to compress {filepath}: {e}")
-
-def urljoin(base, url):
-    return urljoin(base, url)
-
-def get_all_image_urls(url, session, proxies=None, headers=None):
-    try:
-        response = session.get(url, proxies=proxies, headers=headers)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-        images = soup.find_all('img')
-        image_urls = [img.get('src') or img.get('data-src') for img in images]
-        image_urls = [urljoin(url, img_url) for img_url in image_urls if img_url]
-
-        # 递归获取更多图片
-        links = soup.find_all('a', href=True)
-        for link in links:
-            link_url = urljoin(url, link['href'])
-            if urlparse(link_url).netloc == urlparse(url).netloc:
-                image_urls.extend(get_all_image_urls(link_url, session, proxies, headers))
-
-        return image_urls
-    except Exception as e:
-        logging.error(f"Failed to get image URLs from {url}: {e}")
-        return []
-
-def download_images(url, folder, max_threads=5, proxies=None, headers=None, db_path=None):
-    # 创建保存图片的文件夹
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-
-    # 初始化会话
-    session = requests.Session()
-
-    # 获取所有图片链接
-    image_urls = get_all_image_urls(url, session, proxies, headers)
-    image_urls = list(set(image_urls))  # 去重
-
-    # 使用多线程下载图片
-    with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        futures = []
-        for i, img_url in enumerate(image_urls):
-            futures.append(executor.submit(download_image, img_url, folder, i + 1, session, proxies, headers, db_path))
-
-        # 显示进度条
-        for future in tqdm(futures, desc="Downloading images"):
-            future.result()
-
-def load_config(config_path):
-    if not os.path.exists(config_path):
-        return {}
-    with open(config_path, 'r') as f:
-        return json.load(f)
+        with open(path, "r") as f:
+            config = json.load(f)
+            # 合并默认配置
+            for key, value in DEFAULT_CONFIG.items():
+                if key not in config:
+                    config[key] = value
+            return config
+    
+    def save_config(self, config: dict, path: str):
+        """保存配置文件"""
+        with open(path, "w") as f:
+            json.dump(config, f, indent=4)
+    
+    def init_db(self):
+        """初始化数据库"""
+        self.conn = aiomysql.connect(**self.config["db_config"])
+        self.cursor = self.conn.cursor()
+        await self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS images (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                url VARCHAR(255) UNIQUE,
+                path VARCHAR(255),
+                status ENUM('pending', 'downloading', 'completed', 'failed'),
+                retry_count INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await self.conn.commit()
+    
+    async def load_proxy_pool(self):
+        """加载代理池"""
+        try:
+            response = requests.get(self.config["proxy_pool"], timeout=10)
+            return response.text.splitlines()
+        except:
+            console.print("[red]Proxy pool loading failed![/red]")
+            return []
+    
+    async def get_proxy(self):
+        """获取可用代理"""
+        while self.proxy_pool:
+            proxy = self.proxy_pool.pop(0)
+            try:
+                # 测试代理有效性
+                test_url = "https://www.google.com"
+                response = requests.get(test_url, proxies={"http": proxy, "https": proxy}, timeout=5)
+                if response.status_code == 200:
+                    return proxy
+            except:
+                pass
+        return None
+    
+    async def check_image_exists(self, url: str) -> bool:
+        """检查图片是否已存在"""
+        await self.cursor.execute("SELECT COUNT(*) FROM images WHERE url = %s", (url,))
+        count = await self.cursor.fetchone()
+        return count[0] > 0
+    
+    async def save_image_record(self, url: str, path: str, status: str):
+        """保存图片记录"""
+        await self.cursor.execute("""
+            INSERT INTO images (url, path, status)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE status = VALUES(status)
+        """, (url, path, status))
+        await self.conn.commit()
+    
+    async def download_image(self, url: str, folder: str, sem: asyncio.Semaphore):
+        """异步下载图片"""
+        async with sem:
+            try:
+                # 检查是否存在
+                exists = await self.check_image_exists(url)
+                if exists:
+                    console.print(f"[yellow]Skipped existing image: {url}[/yellow]")
+                    return
+                
+                # 获取代理
+                proxy = await self.get_proxy()
+                headers = {"User-Agent": self.config["user_agent"]}
+                
+                # 发送HEAD请求检查
+                head_response = requests.head(url, headers=headers, proxies={"http": proxy, "https": proxy}, timeout=self.config["timeout"])
+                if head_response.status_code != 200:
+                    raise Exception(f"Head request failed: {head_response.status_code}")
+                
+                # 检查内容类型
+                content_type = head_response.headers.get("Content-Type", "")
+                if content_type not in self.config["valid_content_types"]:
+                    raise Exception(f"Invalid content type: {content_type}")
+                
+                # 检查文件大小
+                content_length = int(head_response.headers.get("Content-Length", 0))
+                min_size = self.config["min_size"][0] * 1024 + self.config["min_size"][1] * 1024  # 转换为KB
+                if content_length < min_size:
+                    raise Exception(f"Image too small: {content_length/1024:.1f}KB < {min_size/1024:.1f}KB")
+                
+                # 开始下载
+                async with self.session.get(url, headers=headers, proxies={"http": proxy, "https": proxy}, timeout=self.config["timeout"]) as response:
+                    response.raise_for_status()
+                    
+                    # 计算哈希
+                    hash_md5 = hashlib.md5()
+                    async for chunk in response.content.iter_chunked(8192):
+                        hash_md5.update(chunk)
+                    file_hash = hash_md5.hexdigest()
+                    
+                    # 文件保存
+                    filename = f"{file_hash[:8]}_{os.path.basename(urlparse(url).path)}"
+                    filepath = os.path.join(folder, filename)
+                    
+                    with open(filepath, "wb") as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            f.write(chunk)
+                    
+                    # 压缩图片
+                    self.compress_image(filepath)
+                    
+                    # 保存记录
+                    await self.save_image_record(url, filepath, "completed")
+                    console.print(f"[green]Downloaded: {url}[/green]")
+            
+            except Exception as e:
+                retry_count = await self.handle_failure(url, str(e))
+                if retry_count < self.config["max_retries"]:
+                    console.print(f"[yellow]Retrying ({retry_count}/{self.config['max_retries']}): {url}[/yellow]")
+                    await self.download_image(url, folder, sem)
+                else:
+                    await self.save_image_record(url, "", "failed")
+                    console.print(f"[red]Failed after retries: {url}[/red]")
+    
+    async def handle_failure(self, url: str, error_msg: str) -> int:
+        """处理下载失败"""
+        await self.cursor.execute("UPDATE images SET retry_count = retry_count + 1 WHERE url = %s", (url,))
+        await self.conn.commit()
+        return await self.get_retry_count(url)
+    
+    async def get_retry_count(self, url: str) -> int:
+        """获取重试次数"""
+        await self.cursor.execute("SELECT retry_count FROM images WHERE url = %s", (url,))
+        result = await self.cursor.fetchone()
+        return result[0] if result else 0
+    
+    def compress_image(self, filepath: str):
+        """图片压缩"""
+        try:
+            with Image.open(filepath) as img:
+                img = img.convert("RGB")
+                img.save(filepath, optimize=True, quality=85)
+        except Exception as e:
+            console.print(f"[yellow]Compression failed: {str(e)}[/yellow]")
+    
+    async def crawl_images(self, url: str, folder: str):
+        """网页图片抓取"""
+        try:
+            response = requests.get(url, headers={"User-Agent": self.config["user_agent"]}, timeout=self.config["timeout"])
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # 提取直接图片
+            img_tags = soup.find_all("img")
+            direct_urls = [urljoin(url, img.get("src") or img.get("data-src")) for img in img_tags if img.get("src") or img.get("data-src")]
+            
+            # 提取链接页面
+            link_tags = soup.find_all("a", href=True)
+            link_urls = [urljoin(url, link["href"]) for link in link_tags if link["href"]]
+            
+            # 去重
+            seen = set()
+            all_urls = []
+            for url in direct_urls + link_urls:
+                parsed = urlparse(url)
+                normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                if normalized not in seen:
+                    seen.add(normalized)
+                    all_urls.append(normalized)
+            
+            # 过滤无效URL
+            valid_urls = []
+            for url in all_urls:
+                try:
+                    response = requests.head(url, timeout=5)
+                    if response.status_code == 200 and response.headers.get("Content-Type") in self.config["valid_content_types"]:
+                        valid_urls.append(url)
+                except:
+                    pass
+            
+            # 创建保存目录
+            os.makedirs(folder, exist_ok=True)
+            
+            # 并发下载
+            sem = asyncio.Semaphore(self.config["threads"])
+            tasks = [self.download_image(url, folder, sem) for url in valid_urls]
+            await asyncio.gather(*tasks)
+        
+        except Exception as e:
+            console.print(f"[red]Crawling failed: {str(e)}[/red]")
+    
+    def run(self, start_url: str, output_folder: str):
+        """运行程序"""
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.crawl_images(start_url, output_folder))
+        loop.close()
+        self.conn.close()
 
 def main():
-    print("Welcome to the Image Downloader!")
-    url = input("Enter the URL of the webpage: ")
-    folder = input("Enter the folder to save the images: ")
-    config_path = input("Enter the path to the config file (optional, press Enter to use default): ").strip() or "config.json"
-
-    config = load_config(config_path)
-
-    max_threads = int(input("Enter the number of threads to use (default: 5): ") or config.get("threads", 5))
-    use_proxy = input("Do you want to use a proxy? (yes/no): ").strip().lower() == 'yes'
-    use_db = input("Do you want to use a database to record downloads? (yes/no): ").strip().lower() == 'yes'
-    db_path = config.get("database", "images.db") if use_db else None
-
-    if use_proxy:
-        proxy = input("Enter the proxy server (e.g., http://user:password@host:port): ")
-        proxies = {
-            'http': proxy,
-            'https': proxy
-        }
-    else:
-        proxies = config.get("proxies", {})
-
-    user_agent = input("Enter the User-Agent string (optional): ").strip() or config.get("headers", {}).get("User-Agent")
-    headers = {
-        'User-Agent': user_agent
-    }
-
-    if use_db:
-        init_database(db_path)
-
-    try:
-        download_images(url, folder, max_threads, proxies, headers, db_path)
-        logging.info("All images have been downloaded.")
-    except Exception as e:
-        logging.error(f"An error occurred: {e}")
+    console.rule("[bold red]Advanced Image Downloader[/bold red]")
+    
+    # 交互式配置
+    console.print("[bold]1. Load Configuration[/bold]")
+    config_path = input("Enter config path (leave blank for default): ").strip() or CONFIG_FILE
+    downloader = ImageDownloader(config_path)
+    
+    console.print("\n[bold]2. Input Download Parameters[/bold]")
+    start_url = input("Enter start URL: ").strip()
+    output_folder = input("Enter output folder: ").strip()
+    
+    console.print("\n[bold]3. Start Downloading[/bold]")
+    downloader.run(start_url, output_folder)
+    console.print("\n[bold]Download completed![/bold]")
 
 if __name__ == "__main__":
     main()
