@@ -146,14 +146,24 @@ def download_images(url, folder, max_threads=5, proxies=None, headers=None, db_p
         for future in tqdm(futures, desc="Downloading images"):
             future.result()
 
+def load_config(config_path):
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, 'r') as f:
+        return json.load(f)
+
 def main():
     print("Welcome to the Image Downloader!")
     url = input("Enter the URL of the webpage: ")
     folder = input("Enter the folder to save the images: ")
-    max_threads = int(input("Enter the number of threads to use (default: 5): ") or 5)
+    config_path = input("Enter the path to the config file (optional, press Enter to use default): ").strip() or "config.json"
+
+    config = load_config(config_path)
+
+    max_threads = int(input("Enter the number of threads to use (default: 5): ") or config.get("threads", 5))
     use_proxy = input("Do you want to use a proxy? (yes/no): ").strip().lower() == 'yes'
     use_db = input("Do you want to use a database to record downloads? (yes/no): ").strip().lower() == 'yes'
-    db_path = "images.db" if use_db else None
+    db_path = config.get("database", "images.db") if use_db else None
 
     if use_proxy:
         proxy = input("Enter the proxy server (e.g., http://user:password@host:port): ")
@@ -162,12 +172,12 @@ def main():
             'https': proxy
         }
     else:
-        proxies = None
+        proxies = config.get("proxies", {})
 
-    user_agent = input("Enter the User-Agent string (optional): ").strip()
+    user_agent = input("Enter the User-Agent string (optional): ").strip() or config.get("headers", {}).get("User-Agent")
     headers = {
         'User-Agent': user_agent
-    } if user_agent else None
+    }
 
     if use_db:
         init_database(db_path)

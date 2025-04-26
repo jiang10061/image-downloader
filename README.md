@@ -8,7 +8,16 @@ A Python script to download images from a webpage.
 - Optional proxy support
 - Database recording to avoid duplicate downloads
 - Image compression to save space
+- Interactive command-line interface
+- Configurable via a JSON configuration file
 
 ## Usage
-```bash
-python download_images.py https://example.com ./images --threads 10 --proxy http://user:password@host:port --user-agent "Mozilla/5.0" --config config.json --db images.db
+
+### Prerequisites
+- Python 3.x
+- Required libraries: `requests`, `beautifulsoup4`, `tqdm`, `pillow`
+
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/image-downloader.git
