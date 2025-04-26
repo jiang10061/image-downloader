@@ -56,16 +56,55 @@ You can also run the script directly with command-line arguments:
 The script uses a JSON configuration file (config.json) for default settings. Example config.json:
   ```json
   {
-    "proxies": {
-        "http": "",
-        "https": ""
-    },
-    "headers": {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-    },
-    "database": "images.db",
-    "threads": 5
+  // 代理配置（支持自动验证/轮换）
+  "proxy_pool": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=https&timeout=10000&country=US",
+  "proxy_auth": "optional_username:optional_password", // 如需代理认证
+
+  // 请求头配置（增强反反爬能力）
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.google.com/",
+    "Accept-Encoding": "gzip, deflate"
+  },
+
+  // 数据库配置（支持多种数据库类型）
+  "database": {
+    "type": "mysql", // 可选: mysql | mariadb | sqlite
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "your_secure_password",
+    "database": "image_downloader",
+    "charset": "utf8mb4"
+  },
+
+  // 下载控制
+  "threads": 20, // 建议设置为CPU核心数的2-3倍
+  "max_retries": 5,
+  "timeout": 15,
+
+  // 内容过滤
+  "content_filter": {
+    "min_size": [1920, 1080], // 最小尺寸（宽x高）
+    "max_size": [4096, 4096], // 最大尺寸（可选）
+    "content_types": [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/svg+xml"
+    ]
+  },
+
+  // 高级功能
+  "smart_retry": true, // 智能重试（根据HTTP状态码判断）
+  "auto_resume": true, // 断点续传
+  "image_compression": {
+    "format": "webp", // 输出格式（jpeg/png/webp）
+    "quality": 85,
+    "lossless": false
   }
+}
   ```
 ## Examples
 Interactive Mode
