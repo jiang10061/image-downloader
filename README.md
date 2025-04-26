@@ -20,4 +20,4 @@ A Python script to download images from a webpage.
 ### Installation
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/image-downloader.git
+   git clone https://github.com/jiang10061/image-downloader.git
