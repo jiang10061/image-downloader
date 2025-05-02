@@ -1,136 +1,104 @@
 # Image Downloader
+高级图片下载工具，支持多线程下载、代理验证、断点续传、智能重试、图片压缩等功能。
 
-A Python script to download images from a webpage.
+## 核心功能
+- 全异步下载引擎（基于aiohttp + aiomysql）
+- 智能代理系统（自动验证代理有效性）
+- 断点续传（需配合数据库使用）
+- 智能重试策略（根据HTTP状态码自动判断）
+- 多格式图片处理（JPEG/PNG/GIF/WebP/SVG）
+- 响应式配置验证系统
+- 插件式架构设计
+## 安装依赖
+```bash
+pip install aiohttp aiomysql beautifulsoup4 Pillow rich
+```
+## 使用方法
+- 交互式模式：
+```bash
+  python downloader.py
+```
+- 命令行模式：
+```bash
+  python downloader.py [目标URL] [保存目录] [选项]
+```
+## 常用选项：
+```bash
+  --threads N          下载线程数（默认20）
+  --proxy PROXY_URL    设置HTTP代理（格式：http://host:port）
+  --proxy-auth USER:PASS  代理认证（需与代理池配置匹配）
+  --db-type TYPE       数据库类型（mysql/mariadb/sqlite，默认mysql）
+  --db-user USER       数据库用户名
+  --db-password PASS   数据库密码
+  --compression-format FORMAT  输出图片格式（jpeg/png/webp，默认webp）
+  --compression-quality N  压缩质量（1-100，WebP支持无损压缩）
+  --smart-retry        启用智能重试（根据HTTP状态码自动判断）
+  --auto-resume        启用断点续传（需配合数据库使用）
+```
+## 配置文件示例
+```json
+{
+  "threads": 20,
+  "max_retries": 5,
+  "timeout": 15,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
 
-## Table of Contents
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Interactive Mode](#interactive-mode)
-  - [Command-Line Mode](#command-line-mode)
-- [Configuration File](#configuration-file)
-- [Examples](#examples)
-- [Troubleshooting](#troubleshooting)
-- [Acknowledgments](#acknowledgments)
+  "proxy_pool": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=https",
+  "proxy_auth": "user:pass",
+  "proxy_country": "US",
 
-## Features
-- Supports multiple image formats (JPEG, PNG, GIF, etc.)
-- Multi-threaded downloading for faster performance
-- Optional proxy support
-- Database recording to avoid duplicate downloads
-- Image compression to save space
-- Interactive command-line interface
-- Configurable via a JSON configuration file
-
-## Prerequisites
-- Python 3.x
-- Required libraries: `requests`, `beautifulsoup4`, `tqdm`, `pillow`
-
-## Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/jiang10061/image-downloader.git
-   ```
-2. Navigate to the project directory:
-   ```bash
-   cd image-downloader
-   ```
-3. Install the required libraries:
-   ```bash
-   pip install requests beautifulsoup4 tqdm pillow
-   ```
-## Usage
-Interactive Mode
-Run the script without any arguments to enter interactive mode:
-  ```bash
-  python download_images.py
-  ```
-Follow the on-screen prompts to configure the script.
-Command-Line Mode
-You can also run the script directly with command-line arguments:
-  ```bash
-  python download_images.py https://example.com ./images --threads 10 --proxy http://user:password@host:port --user-agent "Mozilla/5.0" --config config.json --db images.db
-  ```
-## Configuration File
-The script uses a JSON configuration file (config.json) for default settings. Example config.json:
-  ```json
-  {
-  // 代理配置（支持自动验证/轮换）
-  "proxy_pool": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=https&timeout=10000&country=US",
-  "proxy_auth": "optional_username:optional_password", // 如需代理认证
-
-  // 请求头配置（增强反反爬能力）
-  "headers": {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.google.com/",
-    "Accept-Encoding": "gzip, deflate"
-  },
-
-  // 数据库配置（支持多种数据库类型）
   "database": {
-    "type": "mysql", // 可选: mysql | mariadb | sqlite
+    "type": "mysql",
     "host": "localhost",
     "port": 3306,
     "user": "root",
-    "password": "your_secure_password",
+    "password": "secret",
     "database": "image_downloader",
     "charset": "utf8mb4"
   },
 
-  // 下载控制
-  "threads": 20, // 建议设置为CPU核心数的2-3倍
-  "max_retries": 5,
-  "timeout": 15,
-
-  // 内容过滤
   "content_filter": {
-    "min_size": [1920, 1080], // 最小尺寸（宽x高）
-    "max_size": [4096, 4096], // 最大尺寸（可选）
+    "min_size": [1920, 1080],
+    "max_size": [4096, 4096],
     "content_types": [
       "image/jpeg",
       "image/png",
-      "image/webp",
-      "image/svg+xml"
+      "image/webp"
     ]
   },
 
-  // 高级功能
-  "smart_retry": true, // 智能重试（根据HTTP状态码判断）
-  "auto_resume": true, // 断点续传
   "image_compression": {
-    "format": "webp", // 输出格式（jpeg/png/webp）
+    "format": "webp",
     "quality": 85,
     "lossless": false
   }
 }
-  ```
-## Examples
-Interactive Mode
-  ```
-  Welcome to the Image Downloader!
-Enter the URL of the webpage: https://example.com
-  Enter the folder to save the images: ./images
-  Enter the path to the config file (optional, press Enter to use default): 
-  Enter the number of threads to use (default: 5): 10
-  Do you want to use a proxy? (yes/no): yes
-  Enter the proxy server (e.g., http://user:password@host:port): http://user:password@host:port
-  Do you want to use a database to record downloads? (yes/no): yes
-  Enter the User-Agent string (optional): Mozilla/5.0
-  ```
-## Command-Line Mode
-  ```bash
-  python download_images.py https://example.com ./images --threads 10 --proxy http://user:password@host:port --user-agent "Mozilla/5.0" --config config.json --db images.db
-  ```
-## Troubleshooting
-- SSL Certificate Problem: If you encounter SSL certificate issues, try updating your system's certificate library or use SSH instead of HTTPS.
-- Network Issues: Ensure your network connection is stable. If you are behind a proxy, configure the proxy settings in the config.json file.
-- Permission Issues: Ensure you have the necessary permissions to write to the specified folder.
-- Database Issues: Ensure SQLite is installed if you are using database recording.
-## Acknowledgments
-- requests
-- beautifulsoup4
-- tqdm
-- Pillow
-- SQLite
+```
+## 注意事项
+1. 依赖安装：
+- 需Python 3.7+环境
+- WebP压缩需额外安装Pillow支持：
+```bash
+pip install Pillow --upgrade --no-cache-dir
+```
+2. 代理配置：
+- 代理池地址需支持HTTPS协议
+- 代理认证格式： username:password 
+3. 断点续传：
+- 首次运行需手动创建数据库表：
+```sql
+CREATE TABLE images (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  url VARCHAR(255) UNIQUE,
+  path VARCHAR(255),
+  status ENUM('pending','downloading','completed','failed'),
+  retry_count INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+3. 性能调优：
+- 推荐配置： threads=CPU核心数×2 
+- 大规模下载建议使用SQLite内存数据库：
+```bash
+python downloader.py https://example.com ./images --db sqlite:///:memory:
+```
