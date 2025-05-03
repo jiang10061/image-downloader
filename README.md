@@ -175,3 +175,5 @@ CREATE TABLE images (
 ```bash
 python downloader.py https://example.com ./images --db sqlite:///:memory:
 ```
+## 关于Others
+- 这个是因为我每一次用termux向GitHub推送代码时都会出现错误，整了半天才整成，所以就直接放这里面了
