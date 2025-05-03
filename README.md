@@ -35,6 +35,79 @@ pip install aiohttp aiomysql beautifulsoup4 Pillow rich
   --smart-retry        启用智能重试（根据HTTP状态码自动判断）
   --auto-resume        启用断点续传（需配合数据库使用）
 ```
+## 其他：
+1. 代理相关(Proxy)
+```bash
+# 启用代理池(自动轮换)
+--proxy-pool https://api.proxyscrape.com/v2/?request=getproxies&protocol=https
+# 设置代理认证(格式：用户名:密码)
+--proxy-auth username:password
+# 指定代理国家(ISO国家代码)
+--proxy-country US
+# 强制使用单个代理(禁用轮换)
+--single-proxy socks5://127.0.0.1:1080
+```
+2. 断点续传(Resume)
+```bash
+# 启用断点续传(需数据库支持)
+--auto-resume
+# 从指定字节位置开始下载
+--resume-byte 1048576  # 从1MB处继续下载
+```
+3. 高级压缩(Compression)
+```bash
+# 输出为WebP格式(高质量)
+--compression-format webp --compression-quality 95
+# 无损压缩(仅限WebP)
+--compression-lossless
+# 输出为PNG(透明背景保留)
+--compression-format png
+```
+4. 安全与验证(Security)
+```bash
+# 验证SSL证书(禁用自签名证书)
+--verify-ssl
+# 禁用自动重定向(调试403错误)
+--no-redirect
+# 设置最小文件尺寸过滤(单位：KB)
+--min-size 1024  # 只下载≥1MB的图片
+```
+5. 调试与日志(Debugging)
+```bash
+# 启用详细日志(输出到文件)
+--log-level DEBUG --log-file download.log
+# 模拟慢速网络(测试超时)
+--simulate-slow-connection 50kbps
+# 禁用颜色输出(纯文本模式)
+--no-color
+```
+6. 分布式任务(Distributed)
+```bash
+# 启用分布式模式(需Redis集群)
+--distributed-mode --redis-host 192.168.1.100
+# 任务优先级(high/normal/low)
+--task-priority high
+# 节点心跳检测间隔(秒)
+--heartbeat-interval 30
+```
+7. 冷门协议支持(Protocols)
+```bash
+# 下载FTP资源(需账号密码)
+--ftp-url ftp://user:pass@ftp.example.com/file.zip
+# 支持SFTP协议(SSH密钥认证)
+--sftp-key ~/.ssh/id_rsa
+# 解析robots.txt规则(遵守网站爬虫协议)
+--parse-robots
+```
+8. 实验性功能(Experimental)
+```bash
+# 启用AI图像识别过滤(需GPU)
+--ai-filter --model-path /path/to/model.pt
+# 自动提取缩略图(从HTML中)
+--extract-thumbnails
+# 动态调整线程池(根据CPU负载)
+--dynamic-threads
+```
 ## 配置文件示例
 ```json
 {
