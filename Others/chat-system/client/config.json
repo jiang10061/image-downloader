@@ -1,0 +1,10 @@
+{
+  "client": {
+    "server_address": "localhost",
+    "server_port": 5555,
+    "enable_encryption": true,
+    "encryption_key": "2b7e151628aed2a6abf7158809cf4f3c",
+    "network_retry_attempts": 5,
+    "network_heartbeat_interval": 30
+  }
+}

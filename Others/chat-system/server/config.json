@@ -1,0 +1,14 @@
+{
+  "server": {
+    "bind_address": "0.0.0.0",
+    "port": 5555,
+    "max_connections": 100,
+    "heartbeat_interval": 30,
+    "enable_encryption": true,
+    "encryption_key": "2b7e151628aed2a6abf7158809cf4f3c",
+    "logging": {
+      "level": "INFO",
+      "file": "server.log"
+    }
+  }
+}
