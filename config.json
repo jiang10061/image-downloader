@@ -1,57 +1,36 @@
 {
-  // 基础配置
-  "threads": 20,                          // 下载线程数（建议CPU核心数×2）
-  "max_retries": 5,                       // 单张图片最大重试次数
-  "timeout": 15,                          // 请求超时时间（秒）
-  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", // 用户代理字符串
-
-  // 代理配置
-  "proxy_pool": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=https", // 代理池地址
-  "proxy_auth": "username:password",        // 代理认证（格式：用户名:密码）
-  "proxy_country": "US",                  // 代理国家过滤（ISO国家代码）
-
-  // 数据库配置
-  "database": {
-    "type": "mysql",                      // 数据库类型（支持mysql/mariadb/sqlite）
-    "host": "localhost",                  // 数据库地址
-    "port": 3306,                         // 数据库端口
-    "user": "root",                       // 数据库用户名
-    "password": "your_password",          // 数据库密码
-    "database": "image_downloader",       // 数据库名称
-    "charset": "utf8mb4"                  // 字符编码
+  "threads": 30,
+  "max_retries": 5,
+  "timeout": 20,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+  
+  "proxy_pool": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=https",
+  "proxy_auth": null,
+  "proxy_country": "US",
+  
+  "db_config": {
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "your_password",
+    "db": "image_downloader",
+    "charset": "utf8mb4"
   },
-
-  // 内容过滤
+  
   "content_filter": {
-    "min_size": [1920, 1080],             // 最小尺寸（宽x高）
-    "max_size": [4096, 4096],             // 最大尺寸（宽x高）
-    "content_types": [                    // 允许的MIME类型
+    "min_size": [1200, 800],
+    "max_size": [3840, 2160],
+    "content_types": [
       "image/jpeg",
       "image/png",
-      "image/webp",
-      "image/svg+xml"
+      "image/webp"
     ]
   },
-
-  // 高级功能
-  "smart_retry": true,                    // 启用智能重试（根据HTTP状态码）
-  "auto_resume": true,                    // 启用断点续传
-  "image_compression": {
-    "format": "webp",                     // 输出格式（jpeg/png/webp）
-    "quality": 85,                        // 压缩质量（1-100）
-    "lossless": false                     // 是否无损压缩（仅限WebP）
-  },
-
-  // 进度显示
-  "progress_bar": {
-    "enabled": true,                      // 启用进度条
-    "units": "MB",                        // 显示单位
-    "decimal_places": 2                   // 小数位数
-  },
-
-  // 日志配置
+  
   "logging": {
-    "level": "INFO",                      // 日志级别（DEBUG/INFO/WARNING/ERROR）
-    "file": "download.log"                // 日志文件路径
+    "level": "INFO",
+    "file": "logs/image_downloader.log",
+    "backup_count": 7,
+    "max_bytes": 10485760
   }
 }
